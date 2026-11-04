@@ -53,7 +53,7 @@ export class SonioxClient {
      * Connect to Soniox WebSocket
      */
     connect(config) {
-        const { apiKey } = config;
+        const { apiKey, model = 'stt-rt-v6' } = config;
         this.apiKey = apiKey;
         this._config = config;
         this._intentionalDisconnect = false;
@@ -94,7 +94,7 @@ export class SonioxClient {
             // Build config message
             const configMsg = {
                 api_key: apiKey,
-                model: 'stt-rt-v6',
+                model,
                 audio_format: 'pcm_s16le',
                 sample_rate: 16000,
                 num_channels: 1,

@@ -786,6 +786,8 @@ class App {
         const s = settingsManager.get();
 
         document.getElementById('input-api-key').value = s.soniox_api_key || '';
+        const sonioxModelSelect = document.getElementById('select-soniox-model');
+        if (sonioxModelSelect) sonioxModelSelect.value = s.soniox_model || 'stt-rt-v6';
         const openaiKeyInput = document.getElementById('input-openai-key');
         if (openaiKeyInput) openaiKeyInput.value = s.openai_api_key || '';
         const qwenKeyInput = document.getElementById('input-qwen-key');
@@ -925,6 +927,7 @@ class App {
     async _saveSettingsFromForm() {
         const settings = {
             soniox_api_key: document.getElementById('input-api-key').value.trim(),
+            soniox_model: document.getElementById('select-soniox-model')?.value || 'stt-rt-v6',
             openai_api_key: document.getElementById('input-openai-key')?.value.trim() || '',
             qwen_api_key: document.getElementById('input-qwen-key')?.value.trim() || '',
             source_language: document.getElementById('select-source-lang').value,
@@ -2148,7 +2151,7 @@ class App {
 
         try {
             const ok = provider === 'soniox'
-                ? await this._pingSoniox(key)
+                ? await this._pingSoniox(key, document.getElementById('select-soniox-model')?.value || 'stt-rt-v6')
                 : await this._pingOpenAi(key);
             statusEl.className = 'key-status ' + (ok ? 'ok' : 'bad');
             statusEl.textContent = ok ? '✓ connected' : '✗ rejected';
@@ -2161,12 +2164,12 @@ class App {
     }
 
     // Soniox: open WS, send config, wait for first response, close.
-    _pingSoniox(apiKey) {
+    _pingSoniox(apiKey, model) {
         return new Promise((resolve) => {
             const ws = new WebSocket('wss://stt-rt.soniox.com/transcribe-websocket');
             const timer = setTimeout(() => { try { ws.close(); } catch {} resolve(false); }, 5000);
             ws.onopen = () => {
-                ws.send(JSON.stringify({ api_key: apiKey, model: 'stt-rt-v6', audio_format: 'pcm_s16le', sample_rate: 16000, num_channels: 1 }));
+                ws.send(JSON.stringify({ api_key: apiKey, model, audio_format: 'pcm_s16le', sample_rate: 16000, num_channels: 1 }));
             };
             ws.onmessage = (e) => {
                 clearTimeout(timer);
@@ -2468,6 +2471,7 @@ class App {
         this._updateStatus('connecting');
         sonioxClient.connect({
             apiKey: settings.soniox_api_key,
+            model: settings.soniox_model || 'stt-rt-v6',
             sourceLanguage: settings.source_language,
             targetLanguage: settings.target_language,
             customContext: settings.custom_context,

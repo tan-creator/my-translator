@@ -24,6 +24,8 @@ pub struct CustomContext {
 pub struct Settings {
     /// Soniox API key
     pub soniox_api_key: String,
+    /// Soniox real-time speech-to-text model
+    pub soniox_model: String,
     /// OpenAI API key (for gpt-realtime-translate)
     pub openai_api_key: String,
     /// Alibaba Cloud DashScope API key (for Qwen LiveTranslate Flash)
@@ -108,6 +110,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             soniox_api_key: String::new(),
+            soniox_model: "stt-rt-v6".to_string(),
             openai_api_key: String::new(),
             qwen_api_key: String::new(),
             source_language: "auto".to_string(),
