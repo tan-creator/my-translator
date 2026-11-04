@@ -53,7 +53,7 @@ export class SonioxClient {
      * Connect to Soniox WebSocket
      */
     connect(config) {
-        const { apiKey, model = 'stt-rt-v6' } = config;
+        const { apiKey } = config;
         this.apiKey = apiKey;
         this._config = config;
         this._intentionalDisconnect = false;
@@ -70,7 +70,7 @@ export class SonioxClient {
     }
 
     _doConnect(config, carryoverContext = null) {
-        const { apiKey, sourceLanguage, targetLanguage, customContext,
+        const { apiKey, model = 'stt-rt-v6', sourceLanguage, targetLanguage, customContext,
                 translationType, languageA, languageB, languageHintsStrict,
                 endpointDelay } = config;
 

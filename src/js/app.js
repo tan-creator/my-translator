@@ -786,8 +786,8 @@ class App {
         const s = settingsManager.get();
 
         document.getElementById('input-api-key').value = s.soniox_api_key || '';
-        const sonioxModelSelect = document.getElementById('select-soniox-model');
-        if (sonioxModelSelect) sonioxModelSelect.value = s.soniox_model || 'stt-rt-v6';
+        const sonioxModelInput = document.getElementById('input-soniox-model');
+        if (sonioxModelInput) sonioxModelInput.value = s.soniox_model || 'stt-rt-v6';
         const openaiKeyInput = document.getElementById('input-openai-key');
         if (openaiKeyInput) openaiKeyInput.value = s.openai_api_key || '';
         const qwenKeyInput = document.getElementById('input-qwen-key');
@@ -927,7 +927,7 @@ class App {
     async _saveSettingsFromForm() {
         const settings = {
             soniox_api_key: document.getElementById('input-api-key').value.trim(),
-            soniox_model: document.getElementById('select-soniox-model')?.value || 'stt-rt-v6',
+            soniox_model: document.getElementById('input-soniox-model')?.value.trim() || 'stt-rt-v6',
             openai_api_key: document.getElementById('input-openai-key')?.value.trim() || '',
             qwen_api_key: document.getElementById('input-qwen-key')?.value.trim() || '',
             source_language: document.getElementById('select-source-lang').value,
@@ -2151,7 +2151,7 @@ class App {
 
         try {
             const ok = provider === 'soniox'
-                ? await this._pingSoniox(key, document.getElementById('select-soniox-model')?.value || 'stt-rt-v6')
+                ? await this._pingSoniox(key, document.getElementById('input-soniox-model')?.value.trim() || 'stt-rt-v6')
                 : await this._pingOpenAi(key);
             statusEl.className = 'key-status ' + (ok ? 'ok' : 'bad');
             statusEl.textContent = ok ? '✓ connected' : '✗ rejected';

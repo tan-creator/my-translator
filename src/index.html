@@ -378,11 +378,8 @@
 
         <div class="settings-section" id="section-soniox-model">
           <span class="field-label">Soniox Model</span>
-          <select id="select-soniox-model">
-            <option value="stt-rt-v6">stt-rt-v6 (Recommended)</option>
-            <option value="stt-rt-v5">stt-rt-v5 (Deprecated; removed Dec 15, 2026)</option>
-          </select>
-          <p class="hint">Realtime speech-to-text model used by Soniox.</p>
+          <input type="text" id="input-soniox-model" placeholder="stt-rt-v6" autocomplete="off" spellcheck="false" />
+          <p class="hint">Enter a Soniox real-time model ID, e.g. stt-rt-v6.</p>
         </div>
 
         <div class="settings-section" id="section-openai-key">
