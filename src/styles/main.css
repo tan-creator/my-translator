@@ -644,6 +644,9 @@ body {
 
 /* Transcript — Flowing Paragraph */
 .transcript-flow {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
   font-size: var(--transcript-font-size, 16px);
   color: var(--transcript-font-color, #ffffff);
   line-height: 1.7;
@@ -2569,3 +2572,10 @@ body.expanded #library-panel { padding: 8px 6%; }
 .read-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .read-progress { font-size: 12px; color: rgba(255, 255, 255, 0.6); margin-left: auto; }
 .read-hint { font-size: 12px; color: #ff9a9a; min-height: 14px; }
+
+/* Furigana over kanji in finalized Japanese segments */
+.transcript-flow rt {
+  font-size: 0.5em;
+  opacity: 0.75;
+  user-select: none;
+}

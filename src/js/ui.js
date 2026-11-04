@@ -35,6 +35,8 @@ export class TranscriptUI {
         this.currentSpeaker = null; // Track current speaker to detect changes
         this.currentLanguage = null; // Track current language to detect changes
         this.lastConfidence = null; // Last confidence score from Soniox
+        this._furiCache = new Map(); // text → ruby html (null = pending/failed)
+        this._furiWorker = undefined;
     }
 
     get provider() {
@@ -400,6 +402,25 @@ export class TranscriptUI {
         this._ensureContent();
         this._trimSegments();
 
+        // Re-rendering replaces the DOM and kills the user's text selection.
+        // While they hold a selection in the transcript, pause the display (data keeps flowing)
+        // and catch up as soon as the selection is cleared.
+        const sel = window.getSelection();
+        if (sel && !sel.isCollapsed && this.contentEl.contains(sel.anchorNode)) {
+            if (!this._renderPaused) {
+                this._renderPaused = true;
+                const resume = () => {
+                    const s = window.getSelection();
+                    if (s && !s.isCollapsed && this.contentEl?.contains(s.anchorNode)) return;
+                    document.removeEventListener('selectionchange', resume);
+                    this._renderPaused = false;
+                    if (this.contentEl) this._render();
+                };
+                document.addEventListener('selectionchange', resume);
+            }
+            return;
+        }
+
         // Qwen Live Flash is translation-only (no source transcript channel),
         // so force single-panel even when the user picked dual view — otherwise
         // the source panel sits empty / shows dim provisional noise.
@@ -431,7 +452,7 @@ export class TranscriptUI {
             if (seg.status === 'translated' && seg.translation) {
                 const confidenceClass = (seg.confidence !== null && seg.confidence < 0.7) ? ' low-confidence' : '';
                 html += `<div class="seg-block">`;
-                html += `<div class="seg-translated${confidenceClass}">${this._esc(seg.translation)}</div>`;
+                html += `<div class="seg-translated${confidenceClass}">${this._furi(seg.translation)}</div>`;
                 html += `</div>`;
             }
             // Skip 'original' segments in single mode — wait for translation
@@ -492,12 +513,12 @@ export class TranscriptUI {
             if (seg.status === 'translated' && seg.translation) {
                 const confidenceClass = (seg.confidence !== null && seg.confidence < 0.7) ? ' low-confidence' : '';
                 srcHtml += speakerHtml + langHtml;
-                srcHtml += `<div class="seg-text">${this._esc(seg.original || '')}</div>`;
+                srcHtml += `<div class="seg-text">${this._furi(seg.original || '')}</div>`;
                 tgtHtml += speakerHtml ? '<div class="speaker-label">&nbsp;</div>' : '';
-                tgtHtml += `<div class="seg-text${confidenceClass}">${this._esc(seg.translation)}</div>`;
+                tgtHtml += `<div class="seg-text${confidenceClass}">${this._furi(seg.translation)}</div>`;
             } else if (seg.status === 'original' && seg.original) {
                 srcHtml += speakerHtml + langHtml;
-                srcHtml += `<div class="seg-text pending">${this._esc(seg.original)}</div>`;
+                srcHtml += `<div class="seg-text pending">${this._furi(seg.original)}</div>`;
                 tgtHtml += speakerHtml ? '<div class="speaker-label">&nbsp;</div>' : '';
                 tgtHtml += `<div class="seg-text pending">...</div>`;
             }
@@ -538,6 +559,46 @@ export class TranscriptUI {
                 tgtPanel.scrollTop = tgtScrollState.scrollTop;
             }
         }
+    }
+
+    /**
+     * Escaped text, with furigana when it is Japanese and the worker has finished it.
+     * Never blocks: first render shows plain text, the ruby version swaps in on the next frame.
+     * Only finalized segments go through here — provisional text changes too fast to annotate.
+     */
+    _furi(text) {
+        if (!text || !/[぀-ヿ]/.test(text) || !/[㐀-鿿]/.test(text)) return this._esc(text);
+        const hit = this._furiCache.get(text);
+        if (hit) return hit;
+        if (hit === undefined && this._furiStart()) {
+            if (this._furiCache.size > 500) this._furiCache.clear(); // shortcut: crude cap, segments are trimmed anyway
+            this._furiCache.set(text, null);
+            this._furiWorker.postMessage({ text });
+        }
+        return this._esc(text);
+    }
+
+    _furiStart() {
+        if (this._furiWorker === undefined) {
+            try {
+                this._furiWorker = new Worker(new URL('./furigana-worker.js', import.meta.url));
+                this._furiWorker.onmessage = ({ data }) => {
+                    if (data.error) console.warn('[furigana]', data.error);
+                    if (!data.html) return;
+                    this._furiCache.set(data.text, data.html);
+                    // Coalesce: many results in a burst → one re-render. setTimeout, not rAF: rAF stalls in hidden windows.
+                    if (!this._furiTimer) this._furiTimer = setTimeout(() => {
+                        this._furiTimer = 0;
+                        if (this.contentEl) this._render();
+                    }, 50);
+                };
+                this._furiWorker.onerror = (e) => { console.warn('[furigana] worker failed', e.message); this._furiWorker = null; };
+            } catch (e) {
+                console.warn('[furigana] disabled', e);
+                this._furiWorker = null;
+            }
+        }
+        return !!this._furiWorker;
     }
 
     _getScrollState(el) {
