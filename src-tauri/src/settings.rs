@@ -102,6 +102,12 @@ pub struct Settings {
     /// Default false — speaker → mic feedback loop on shared devices.
     #[serde(default)]
     pub openai_audio_output: bool,
+    /// Soniox options saved by the settings form. Missing here = silently dropped on save.
+    pub translation_type: String,
+    pub language_a: String,
+    pub language_b: String,
+    pub language_hints_strict: bool,
+    pub endpoint_delay: u32,
 }
 
 impl Default for Settings {
@@ -142,6 +148,11 @@ impl Default for Settings {
             local_tts_speed: 1.0,
             local_tts_models_dir: String::new(),
             openai_audio_output: false,
+            translation_type: "one_way".to_string(),
+            language_a: "ja".to_string(),
+            language_b: "vi".to_string(),
+            language_hints_strict: false,
+            endpoint_delay: 3000,
         }
     }
 }
@@ -195,3 +206,22 @@ impl Settings {
 
 /// Thread-safe settings state managed by Tauri
 pub struct SettingsState(pub Mutex<Settings>);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn soniox_form_fields_survive_round_trip() {
+        let json = r#"{"source_language":"ja","language_hints_strict":true,"endpoint_delay":500,"translation_type":"two_way","language_a":"ja","language_b":"vi"}"#;
+        let s: Settings = serde_json::from_str(json).unwrap();
+        let back: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+        assert!(back.language_hints_strict);
+        assert_eq!(back.endpoint_delay, 500);
+        assert_eq!(back.translation_type, "two_way");
+        assert_eq!(back.source_language, "ja");
+        // Old settings.json without the new keys still loads with defaults.
+        let old: Settings = serde_json::from_str(r#"{"source_language":"ja"}"#).unwrap();
+        assert_eq!(old.endpoint_delay, 3000);
+    }
+}

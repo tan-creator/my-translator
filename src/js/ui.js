@@ -16,7 +16,8 @@ export class TranscriptUI {
         this.contentEl = null;
         this.maxChars = 1200;
         this.fontSize = 16;
-        this.viewMode = 'single'; // 'single' or 'dual'
+        this.viewMode = 'dual'; // 'single' or 'dual' — dual by default
+        document.getElementById('overlay-view')?.classList.add('dual-view');
 
         // Segments: each has { original, translation, status, speaker, language, confidence }
         this.segments = [];
