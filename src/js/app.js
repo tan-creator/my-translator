@@ -53,6 +53,8 @@ class App {
         this.isPinned = true;     // Always-on-top state
         this.isCompact = false;   // Compact mode (hide control bar)
         this._closing = false;    // Guard so the exit flush runs exactly once
+        this._settingsAutosaveTimer = null;
+        this._settingsAutosaveQueue = Promise.resolve();
     }
 
     async init() {
@@ -80,6 +82,7 @@ class App {
 
         // Bind event listeners
         this._bindEvents();
+        await this._restorePinState();
 
         // Flush the session on every close route (window ✕, Cmd+Q, Dock quit).
         await this._bindCloseHooks();
@@ -183,7 +186,7 @@ class App {
 
         // Back from settings
         document.getElementById('btn-back').addEventListener('click', () => {
-            this._showView('overlay');
+            this._saveSettingsFromForm();
         });
 
         // Back from session viewer to session list
@@ -271,6 +274,9 @@ class App {
                 dot.classList.add('active');
                 const color = dot.dataset.color;
                 this.transcriptUI.configure({ fontColor: color });
+                settingsManager.save({ font_color: color }).catch(err => {
+                    this._showToast(`Failed to save font color: ${err}`, 'error');
+                });
             });
         });
 
@@ -610,7 +616,38 @@ class App {
     }
 
     _bindSettingsForm() {
-        // These are handled in _populateSettingsForm and _saveSettingsFromForm
+        const settingsView = document.getElementById('settings-view');
+        if (!settingsView) return;
+
+        const scheduleSave = (event) => {
+            const target = event.target;
+            if (!target.closest('.settings-tab-content') ||
+                !target.matches('input, select, textarea')) return;
+
+            clearTimeout(this._settingsAutosaveTimer);
+            this._settingsAutosaveTimer = setTimeout(() => {
+                this._settingsAutosaveTimer = null;
+                this._settingsAutosaveQueue = this._settingsAutosaveQueue.then(async () => {
+                    if (!settingsView.classList.contains('active')) return;
+                    await this._saveSettingsFromForm({ closeView: false, showToast: false });
+                }).catch(err => {
+                    console.error('[Settings] Auto-save failed:', err);
+                    this._showToast(`Failed to save settings: ${err}`, 'error');
+                });
+            }, 400);
+        };
+
+        settingsView.addEventListener('input', scheduleSave);
+        settingsView.addEventListener('change', scheduleSave);
+        settingsView.addEventListener('click', (event) => {
+            if (event.target.closest('.btn-remove-term, .btn-remove-general')) {
+                clearTimeout(this._settingsAutosaveTimer);
+                this._settingsAutosaveTimer = setTimeout(() => {
+                    this._settingsAutosaveTimer = null;
+                    this._saveSettingsFromForm({ closeView: false, showToast: false });
+                }, 0);
+            }
+        });
     }
 
     // ─── Keyboard Shortcuts ─────────────────────────────────
@@ -657,7 +694,7 @@ class App {
                 }
                 const settingsVisible = document.getElementById('settings-view').classList.contains('active');
                 if (settingsVisible) {
-                    this._showView('overlay');
+                    this._saveSettingsFromForm();
                 }
             }
 
@@ -834,6 +871,9 @@ class App {
         document.getElementById('max-lines-value').textContent = s.max_lines || 5;
 
         document.getElementById('check-show-original').checked = s.show_original !== false;
+        document.querySelectorAll('.color-dot').forEach(dot => {
+            dot.classList.toggle('active', dot.dataset.color === (s.font_color || '#ffffff'));
+        });
 
         // Custom context (rich format)
         const ctx = s.custom_context;
@@ -924,7 +964,9 @@ class App {
         }
     }
 
-    async _saveSettingsFromForm() {
+    async _saveSettingsFromForm({ closeView = true, showToast = true } = {}) {
+        clearTimeout(this._settingsAutosaveTimer);
+        this._settingsAutosaveTimer = null;
         const settings = {
             soniox_api_key: document.getElementById('input-api-key').value.trim(),
             soniox_model: document.getElementById('input-soniox-model')?.value.trim() || 'stt-rt-v6',
@@ -998,14 +1040,14 @@ class App {
         settings.tiktok_speed = parseFloat(document.getElementById('range-tiktok-speed')?.value || 1.0);
         settings.tiktok_session_id = document.getElementById('input-tiktok-session')?.value.trim() || '';
         settings.local_tts_speed = parseFloat(document.getElementById('range-local-speed')?.value || 1.0);
-        settings.tts_enabled = false;
-
         try {
             await settingsManager.save(settings);
-            this._showToast('Settings saved', 'success');
-            this._showView('overlay');
+            if (showToast) this._showToast('Settings saved', 'success');
+            if (closeView) this._showView('overlay');
+            return true;
         } catch (err) {
             this._showToast(`Failed to save: ${err}`, 'error');
+            return false;
         }
     }
 
@@ -1022,9 +1064,7 @@ class App {
             langEl.textContent = `${settings.source_language || 'auto'} → ${settings.target_language || 'vi'}`;
         }
 
-        // Note: saving settings turns TTS narration off (see end of this method), so the
-        // active provider is re-configured on the next TTS toggle — no mid-session re-sync
-        // needed here. Disconnect any non-active provider to drop stale queued audio.
+        // Disconnect non-active providers to drop stale queued audio.
         if (this._allTTS) {
             const active = this._getActiveTTS();
             for (const tts of this._allTTS) {
@@ -1038,16 +1078,41 @@ class App {
                 maxLines: settings.max_lines || 5,
                 showOriginal: settings.show_original !== false,
                 fontSize: settings.font_size || 16,
+                fontColor: settings.font_color || '#ffffff',
+                viewMode: settings.dual_view ? 'dual' : 'single',
             });
         }
+        const viewModeButton = document.getElementById('btn-view-mode');
+        if (viewModeButton) viewModeButton.classList.toggle('active', !!settings.dual_view);
+        document.querySelectorAll('.color-dot').forEach(dot => {
+            dot.classList.toggle('active', dot.dataset.color === (settings.font_color || '#ffffff'));
+        });
+        const fontSizeDisplay = document.getElementById('font-size-display');
+        if (fontSizeDisplay) fontSizeDisplay.textContent = settings.font_size || 16;
 
         // Update current source button states
         this.currentSource = settings.audio_source || 'system';
         this._updateSourceButtons();
+        this._updatePillState(settings.translation_mode || 'soniox');
 
-        // TTS is always OFF on app start — user must toggle on each session
-        this.ttsEnabled = false;
-        this._updateTTSButton();
+        if (!this._lastAppliedSettings || this._ttsSettingsChanged(this._lastAppliedSettings, settings)) {
+            // TTS is always OFF on app start and is stopped when its configuration changes.
+            this.ttsEnabled = false;
+            this._updateTTSButton();
+        }
+        this._lastAppliedSettings = settings;
+    }
+
+    _ttsSettingsChanged(previous, next) {
+        const keys = [
+            'tts_provider', 'elevenlabs_api_key', 'tts_voice_id', 'tts_speed',
+            'edge_tts_voice', 'edge_tts_speed', 'google_tts_api_key',
+            'google_tts_voice', 'google_tts_speed', 'microsoft_v2_voice',
+            'microsoft_v2_speed', 'google_free_api_key', 'google_free_voice',
+            'google_free_speed', 'tiktok_session_id', 'tiktok_voice',
+            'tiktok_speed', 'local_tts_voice', 'local_tts_speed',
+        ];
+        return keys.some(key => previous[key] !== next[key]);
     }
 
     // ─── TTS Control ──────────────────────────────────────
@@ -1915,14 +1980,26 @@ class App {
         const picker = document.getElementById('engine-picker');
         if (picker) picker.style.display = 'none';
         this._enginePickerDismissed = true;
+        localStorage.setItem('engine_picker_dismissed', '1');
     }
 
     _maybeShowEnginePicker() {
-        // Show on each fresh launch until first dismissal (click on a card or
-        // first Start). Once dismissed, the toolbar pill is the only switcher.
         if (this._enginePickerDismissed) return;
         if (this.isRunning || this.isStarting) return;
         if (this.transcriptUI && this.transcriptUI.hasContent()) return;
+
+        const settings = settingsManager.get();
+        const mode = settings.translation_mode || 'soniox';
+        const hasSavedEngine =
+            (mode === 'soniox' && !!settings.soniox_api_key?.trim()) ||
+            (mode === 'openai' && !!settings.openai_api_key?.trim()) ||
+            (mode === 'qwen' && !!settings.qwen_api_key?.trim()) ||
+            (mode === 'local' && this.isAppleSilicon);
+        if (hasSavedEngine || localStorage.getItem('engine_picker_dismissed') === '1') {
+            this._hideEnginePicker();
+            return;
+        }
+
         this._showEnginePicker();
     }
 
@@ -2902,6 +2979,13 @@ class App {
             if (this._closing) return;
             this._closing = true;
             event.preventDefault();
+            if (document.getElementById('settings-view').classList.contains('active')) {
+                const saved = await this._saveSettingsFromForm({ closeView: false, showToast: false });
+                if (!saved) {
+                    this._closing = false;
+                    return;
+                }
+            }
             await Promise.race([this._flushOnExit(), this._sleep(3000)]);
             try {
                 await invoke('exit_app');
@@ -2913,6 +2997,9 @@ class App {
         await this.appWindow.listen('app-exit-requested', async () => {
             if (this._closing) return;
             this._closing = true;
+            if (document.getElementById('settings-view').classList.contains('active')) {
+                await this._saveSettingsFromForm({ closeView: false, showToast: false });
+            }
             await Promise.race([this._flushOnExit(), this._sleep(3000)]);
             try { await invoke('exit_app'); } catch {}
         });
@@ -3061,9 +3148,22 @@ class App {
     async _togglePin() {
         this.isPinned = !this.isPinned;
         await this.appWindow.setAlwaysOnTop(this.isPinned);
+        localStorage.setItem('window_pinned', this.isPinned ? '1' : '0');
         const btn = document.getElementById('btn-pin');
         if (btn) btn.classList.toggle('active', this.isPinned);
         this._showToast(this.isPinned ? 'Pinned on top' : 'Unpinned — window can go behind other apps', 'success');
+    }
+
+    async _restorePinState() {
+        const saved = localStorage.getItem('window_pinned');
+        if (saved !== null) this.isPinned = saved !== '0';
+        const btn = document.getElementById('btn-pin');
+        if (btn) btn.classList.toggle('active', this.isPinned);
+        try {
+            await this.appWindow.setAlwaysOnTop(this.isPinned);
+        } catch (err) {
+            console.error('[Window] Failed to restore pin state:', err);
+        }
     }
 
     // ─── Compact Mode ───────────────────────────────
@@ -3073,12 +3173,17 @@ class App {
         this.isCompact = toggleManualCompact();
     }
 
-    _toggleViewMode() {
+    async _toggleViewMode() {
         const isDual = this.transcriptUI.viewMode === 'dual';
         const newMode = isDual ? 'single' : 'dual';
         this.transcriptUI.configure({ viewMode: newMode });
         const btn = document.getElementById('btn-view-mode');
         if (btn) btn.classList.toggle('active', newMode === 'dual');
+        try {
+            await settingsManager.save({ dual_view: newMode === 'dual' });
+        } catch (err) {
+            this._showToast(`Failed to save view mode: ${err}`, 'error');
+        }
     }
 
     _adjustFontSize(delta) {
@@ -3095,6 +3200,9 @@ class App {
         if (slider) slider.value = newSize;
         const sliderVal = document.getElementById('font-size-value');
         if (sliderVal) sliderVal.textContent = `${newSize}px`;
+        settingsManager.save({ font_size: newSize }).catch(err => {
+            this._showToast(`Failed to save font size: ${err}`, 'error');
+        });
     }
 
     // ─── Toast ─────────────────────────────────────────────

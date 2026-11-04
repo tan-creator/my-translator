@@ -46,6 +46,7 @@ export function initShell() {
         btn.addEventListener('click', () => setActivity(btn.dataset.activity));
     });
     document.body.classList.add('activity-live');
+    setChromeHidden(manualCompact);
 
     // Auto-hide interaction watchers (armed only while a live session runs)
     window.addEventListener('mousemove', onChromeInteract, { passive: true });
@@ -59,7 +60,7 @@ export function initShell() {
 
 const AUTO_HIDE_IDLE_MS = 3000;
 
-let manualCompact = false;
+let manualCompact = localStorage.getItem('manual_compact') === '1';
 let chromeHidden = false;
 let autoWatching = false;
 let autoHideEnabled = localStorage.getItem('auto_hide_toolbar') !== '0'; // default ON
@@ -109,6 +110,7 @@ export function stopAutoHideWatch() {
 /** Manual Compact from the ⋯ menu — sticky until toggled back. */
 export function toggleManualCompact() {
     manualCompact = !manualCompact;
+    localStorage.setItem('manual_compact', manualCompact ? '1' : '0');
     setChromeHidden(manualCompact);
     return manualCompact;
 }

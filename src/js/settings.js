@@ -17,6 +17,8 @@ const DEFAULT_SETTINGS = {
   font_size: 16,
   max_lines: 5,
   show_original: true,
+  dual_view: false,
+  font_color: '#ffffff',
   translation_mode: 'soniox',
   custom_context: null,
   elevenlabs_api_key: '',
@@ -50,6 +52,7 @@ class SettingsManager {
   constructor() {
     this.settings = { ...DEFAULT_SETTINGS };
     this._listeners = [];
+    this._saveQueue = Promise.resolve();
   }
 
   /**
@@ -71,12 +74,17 @@ class SettingsManager {
    * Save settings to Rust backend
    */
   async save(newSettings) {
-    try {
+    const savePromise = this._saveQueue.then(async () => {
       const merged = { ...this.settings, ...newSettings };
       await invoke('save_settings', { newSettings: merged });
       this.settings = merged;
       this._notify();
       return true;
+    });
+    this._saveQueue = savePromise.catch(() => {});
+
+    try {
+      return await savePromise;
     } catch (err) {
       console.error('Failed to save settings:', err);
       throw err;

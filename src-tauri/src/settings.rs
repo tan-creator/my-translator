@@ -45,6 +45,10 @@ pub struct Settings {
     pub max_lines: u32,
     /// Whether to show original text alongside translation
     pub show_original: bool,
+    /// Whether to display the transcript in dual-panel mode
+    pub dual_view: bool,
+    /// Transcript text color
+    pub font_color: String,
     /// Translation mode: "soniox" | "local" | "openai"
     pub translation_mode: String,
     /// Optional custom context for better transcription
@@ -120,6 +124,8 @@ impl Default for Settings {
             font_size: 16,
             max_lines: 5,
             show_original: true,
+            dual_view: false,
+            font_color: "#ffffff".to_string(),
             translation_mode: "soniox".to_string(),
             custom_context: None,
             elevenlabs_api_key: String::new(),
